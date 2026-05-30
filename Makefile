@@ -45,36 +45,22 @@ drivers/%.o: drivers/%.c
 $(KERNEL_ELF): entry.o kernel.o $(DRIVER_OBJS) linker.ld
 	$(LD) -m elf_i386 -T linker.ld -o $(KERNEL_ELF) entry.o kernel.o $(DRIVER_OBJS)
 
-# Generate a bootable GRUB ISO using grub-mkrescue
+# Generate a bootable ISO using the Spartan pipeline
 $(OS_ISO): $(KERNEL_ELF)
-	@echo "Creating GRUB ISO staging directory structure..."
-	mkdir -p $(ISO_DIR)/boot/grub
-	
-	@echo "Copying kernel ELF binary to staging boot directory..."
-	cp $(KERNEL_ELF) $(ISO_DIR)/boot/
-	
-	@echo "Generating grub.cfg dynamic configuration file..."
-	@echo 'set default=0' > $(ISO_DIR)/boot/grub/grub.cfg
-	@echo 'set timeout=0' >> $(ISO_DIR)/boot/grub/grub.cfg
-	@echo '' >> $(ISO_DIR)/boot/grub/grub.cfg
-	@echo 'menuentry "PingOS v0.2.0" {' >> $(ISO_DIR)/boot/grub/grub.cfg
-	@echo '    multiboot /boot/$(KERNEL_ELF)' >> $(ISO_DIR)/boot/grub/grub.cfg
-	@echo '    boot' >> $(ISO_DIR)/boot/grub/grub.cfg
-	@echo '}' >> $(ISO_DIR)/boot/grub/grub.cfg
-	
-	@echo "Verifying multiboot compliance..."
-	@if grub-file --is-x86-multiboot $(ISO_DIR)/boot/$(KERNEL_ELF); then \
-		echo "Success: Kernel is Multiboot compliant."; \
-	else \
-		echo "Warning: Kernel is NOT Multiboot compliant! Verify your entry.asm multiboot headers."; \
-	fi
-	
-	@echo "Building bootable GRUB CD-ROM ISO image with grub-mkrescue..."
-	grub-mkrescue -o $(OS_ISO) $(ISO_DIR)
+	make spartan
+
+# Download the Spartan CLI tool and execute it immediately
+spartan:
+	@echo "Downloading the Spartan commandline script..."
+	curl -L -o spartan.sh https://github.com/alan-dev-dotcom/Spartan/releases/download/Spartan/spartan.sh
+	@echo "Executing Spartan CLI..."
+	bash spartan.sh
 
 # Boot QEMU using the newly built virtual GRUB CD-ROM ISO
 run: $(OS_ISO)
 	qemu-system-i386 -cdrom $(OS_ISO)
 
 clean:
-	rm -rf *.o drivers/*.o $(KERNEL_ELF) $(OS_ISO) $(ISO_DIR)
+	rm -rf *.o drivers/*.o $(KERNEL_ELF) $(OS_ISO) $(ISO_DIR) spartan.sh
+
+.PHONY: all spartan run clean
