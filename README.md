@@ -38,26 +38,6 @@ uname -r - Prints the kernel release version.
 
 devices - Scans and lists PCI controller nodes.
 
-Directory Structure
-
-├── boot
-│   └── boot.asm        # 16-bit bootloader (loads kernel & enters 32-bit PM)
-├── drivers
-│   ├── intel_gpu.c     # Intel GPU scan helper via PCI configuration ports
-│   ├── keyboard.c      # PS/2 keyboard translator & controller handler
-│   ├── mouse.c         # PS/2 auxiliary mouse setup & polling packet decoder
-│   ├── usb.c           # Serial Bus controller PCI interface detector
-│   └── vga.c           # Direct screen memory buffer driver (address 0xB8000)
-├── include
-│   ├── drivers.h       # Prototypes and interface signatures for drivers
-│   └── io.h            # Inline assembly port access wrappers (inb, outb, etc.)
-├── kernel
-│   ├── entry.asm       # 32-bit kernel startup bootstrap
-│   └── kernel.c        # Principal main execution loop & command shell
-├── linker.ld           # Linker instructions mapping the kernel entry point to 0x10000
-└── Makefile            # Master build system sequence
-
-
 Building and Running
 
 Prerequisites
@@ -73,6 +53,7 @@ Compiling
 Clean existing objects and compile the bootloader and kernel binaries:
 
 make clean
+
 make
 
 
