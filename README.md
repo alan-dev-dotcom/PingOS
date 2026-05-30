@@ -6,7 +6,7 @@ Project Overview
 
 The project initiates from a custom 16-bit real-mode bootloader that configures segments, switches the CPU to 32-bit protected mode, and executes the C kernel. The interface runs entirely in a monochrome text environment.
 
-Features
+# Features
 
 Custom Bootloader: Written in NASM assembly, handles disk sector reading, sets up the Global Descriptor Table (GDT), and jumps into the 32-bit kernel entry point.
 
@@ -38,9 +38,9 @@ uname -r - Prints the kernel release version.
 
 devices - Scans and lists PCI controller nodes.
 
-Building and Running
+# Building and Running
 
-Prerequisites
+# Prerequisites
 
 To compile and build this project on Debian-based or Ubuntu systems, you need gcc-multilib, nasm, and a system emulator like QEMU.
 
@@ -48,7 +48,7 @@ sudo apt update
 sudo apt install build-essential nasm qemu-system-x86 xorriso
 
 
-Compiling
+# Compiling
 
 Clean existing objects and compile the bootloader and kernel binaries:
 
@@ -57,14 +57,14 @@ make clean
 make
 
 
-Emulation
+# Emulation
 
 Run the bootable ISO using QEMU:
 
 qemu-system-i386 -cdrom pingos.iso
 
 
-Contributing
+# Contributing
 
 Fork the project repository on GitHub.
 
