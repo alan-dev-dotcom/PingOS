@@ -1,4 +1,4 @@
-PingOS
+# PingOS
 
 PingOS is a freestanding 32-bit x86 operating system developed as a hobby project. It is designed to demonstrate basic low-level system design concepts, including boot sector initialization, Protected Mode transitions, and simple hardware driver implementation.
 
