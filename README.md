@@ -10,7 +10,7 @@ Features
 
 Custom Bootloader: Written in NASM assembly, handles disk sector reading, sets up the Global Descriptor Table (GDT), and jumps into the 32-bit kernel entry point.
 
-Monochrome Video Driver: Direct-to-video memory implementation (address 0xB8000) supporting scroll, clear, and hardware cursor positioning.
+Video Driver: Direct-to-video memory implementation (address 0xB8000) supporting scroll, clear, and hardware cursor positioning.
 
 Keyboard Driver: Support for ASCII translation, tracking of modifier states (Shift, Caps Lock), and backspace handling.
 
