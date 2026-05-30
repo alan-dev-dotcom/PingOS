@@ -2,6 +2,20 @@
 
 PingOS is a freestanding 32-bit x86 operating system developed as a hobby project. It is designed to demonstrate basic low-level system design concepts, including boot sector initialization, Protected Mode transitions, and simple hardware driver implementation.
 
+# Compile PingOS from source code
+
+Clone the source code of PingOS.
+
+Run "make spartan"
+
+After running it, run "spartan build"
+
+This will output the iso file.
+
+If you want to remove the compiled files quickly, then run "spartan clean".
+
+To exit the spartan script, run "exit".
+
 # Project Overview
 
 The project initiates from a custom 16-bit real-mode bootloader that configures segments, switches the CPU to 32-bit protected mode, and executes the C kernel. The interface runs entirely in a monochrome text environment.
@@ -23,25 +37,6 @@ USB host controller scanning for UHCI, OHCI, EHCI, or xHCI controllers.
 Intel Integrated GPU detector to locate display devices on the PCI bus and enable command registers.
 
 Command Line Interface: Standard shell with support for basic commands including:
-
-# Building and Running
-
-# Prerequisites
-
-To compile and build this project on Debian-based or Ubuntu systems, you need gcc-multilib, nasm, and a system emulator like QEMU.
-
-sudo apt update
-sudo apt install build-essential nasm qemu-system-x86 xorriso
-
-
-# Compiling
-
-Clean existing objects and compile the bootloader and kernel binaries:
-
-make clean
-
-make
-
 
 # Emulation
 
