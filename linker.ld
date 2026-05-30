@@ -1,34 +1,30 @@
-/* ==============================================================================
- * Linker script for PingKernel
- * Instructs dynamic output organization of the machine code sections
- * ==============================================================================
- */
-
-ENTRY(main)
+ENTRY(_start)
 
 SECTIONS
 {
-    /* Since our bootloader loads the kernel payload into physical address 0x10000 (1000:0000) */
-    . = 0x10000;
+    /* GRUB convention: Load the kernel at the 1MB physical address */
+    . = 1M;
 
-    .text : ALIGN(4096)
+    .text BLOCK(4K) : ALIGN(4K)
     {
+        /* Ensure the multiboot header goes at the absolute beginning */
+        *(.multiboot)
         *(.text)
     }
 
-    .rodata : ALIGN(4096)
+    .rodata BLOCK(4K) : ALIGN(4K)
     {
         *(.rodata)
     }
 
-    .data : ALIGN(4096)
+    .data BLOCK(4K) : ALIGN(4K)
     {
         *(.data)
     }
 
-    .bss : ALIGN(4096)
+    .bss BLOCK(4K) : ALIGN(4K)
     {
-        *(.bss)
         *(COMMON)
+        *(.bss)
     }
 }

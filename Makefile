@@ -1,6 +1,7 @@
 # ==============================================================================
-# Makefile to compile and assemble PingOS into a bootable CD-ROM ISO
-# Requirements: nasm, gcc (i386-elf or multilib support with -m32 option), xorriso
+# Makefile to compile and assemble PingOS into a bootable GRUB ISO
+# Requirements: nasm, gcc (i386-elf or multilib support with -m32 option),
+#               xorriso, grub-pc-bin (on Ubuntu/Debian), and grub-common
 # Supports directory structure: boot/, kernel/, drivers/, include/
 # ==============================================================================
 
@@ -13,13 +14,12 @@ ASM = nasm
 # -ffreestanding prevents the compiler from linking default standard C libraries
 # -m32 compiles for 32-bit x86 target
 # -fno-pie prevents Position Independent Executable generation
+# -fno-stack-protector disables stack protection checks (not present in freestanding)
 # -Iinclude allows finding header files inside the include/ directory
 CFLAGS = -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -Iinclude -c
 
 # Output images and paths
-BOOT_BIN = boot.bin
-KERNEL_BIN = kernel.bin
-OS_IMAGE = pingos.img
+KERNEL_ELF = kernel.bin
 OS_ISO = pingos.iso
 ISO_DIR = iso_staging
 
@@ -27,9 +27,6 @@ ISO_DIR = iso_staging
 DRIVER_OBJS = drivers/vga.o drivers/keyboard.o drivers/mouse.o drivers/intel_gpu.o drivers/usb.o
 
 all: $(OS_ISO)
-
-$(BOOT_BIN): boot/boot.asm
-	$(ASM) -f bin boot/boot.asm -o $(BOOT_BIN)
 
 entry.o: kernel/entry.asm
 	$(ASM) -f elf32 kernel/entry.asm -o entry.o
@@ -42,26 +39,42 @@ drivers/%.o: drivers/%.c
 	@mkdir -p drivers
 	$(CC) $(CFLAGS) $< -o $@
 
-# Link the entry stub, kernel, and all driver object files together
-$(KERNEL_BIN): entry.o kernel.o $(DRIVER_OBJS) linker.ld
-	$(LD) -m elf_i386 -T linker.ld -o $(KERNEL_BIN) --oformat binary entry.o kernel.o $(DRIVER_OBJS)
+# Link the entry stub, kernel, and all driver object files together as a standard ELF
+# Note: GRUB natively supports loading ELF files with a Multiboot header, 
+# so we remove --oformat binary to allow GRUB to parse the section headers correctly.
+$(KERNEL_ELF): entry.o kernel.o $(DRIVER_OBJS) linker.ld
+	$(LD) -m elf_i386 -T linker.ld -o $(KERNEL_ELF) entry.o kernel.o $(DRIVER_OBJS)
 
-# Build the complete floppy image (1.44MB)
-$(OS_IMAGE): $(BOOT_BIN) $(KERNEL_BIN)
-	cat $(BOOT_BIN) $(KERNEL_BIN) > $(OS_IMAGE)
-	truncate -s 1440k $(OS_IMAGE)
+# Generate a bootable GRUB ISO using grub-mkrescue
+$(OS_ISO): $(KERNEL_ELF)
+	@echo "Creating GRUB ISO staging directory structure..."
+	mkdir -p $(ISO_DIR)/boot/grub
+	
+	@echo "Copying kernel ELF binary to staging boot directory..."
+	cp $(KERNEL_ELF) $(ISO_DIR)/boot/
+	
+	@echo "Generating grub.cfg dynamic configuration file..."
+	@echo 'set default=0' > $(ISO_DIR)/boot/grub/grub.cfg
+	@echo 'set timeout=0' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo 'menuentry "PingOS v0.2.0" {' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '    multiboot /boot/$(KERNEL_ELF)' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '    boot' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '}' >> $(ISO_DIR)/boot/grub/grub.cfg
+	
+	@echo "Verifying multiboot compliance..."
+	@if grub-file --is-x86-multiboot $(ISO_DIR)/boot/$(KERNEL_ELF); then \
+		echo "Success: Kernel is Multiboot compliant."; \
+	else \
+		echo "Warning: Kernel is NOT Multiboot compliant! Verify your entry.asm multiboot headers."; \
+	fi
+	
+	@echo "Building bootable GRUB CD-ROM ISO image with grub-mkrescue..."
+	grub-mkrescue -o $(OS_ISO) $(ISO_DIR)
 
-# Generate a bootable El Torito ISO using xorriso
-$(OS_ISO): $(OS_IMAGE)
-	@echo "Creating ISO staging directory..."
-	mkdir -p $(ISO_DIR)
-	cp $(OS_IMAGE) $(ISO_DIR)/
-	@echo "Generating bootable CD-ROM ISO with xorriso..."
-	xorriso -as mkisofs -V "PINGOS" -b $(OS_IMAGE) -o $(OS_ISO) $(ISO_DIR)/
-
-# Boot QEMU using the newly built virtual CD-ROM drive (-cdrom)
+# Boot QEMU using the newly built virtual GRUB CD-ROM ISO
 run: $(OS_ISO)
-	qemu-system-x86_64 -cdrom $(OS_ISO)
+	qemu-system-i386 -cdrom $(OS_ISO)
 
 clean:
-	rm -rf *.o drivers/*.o $(BOOT_BIN) $(KERNEL_BIN) $(OS_IMAGE) $(OS_ISO) $(ISO_DIR)
+	rm -rf *.o drivers/*.o $(KERNEL_ELF) $(OS_ISO) $(ISO_DIR)

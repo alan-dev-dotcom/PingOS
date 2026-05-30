@@ -1,11 +1,28 @@
 ; ==============================================================================
-; kernel/entry.asm - Assembly entry point stub for PingOS
+; PingOS Kernel Entry Point Stub (with Multiboot Header)
 ; ==============================================================================
-[bits 32]
-[extern main]       ; Let NASM know that 'main' is defined in our C file
 
-global _start       ; Define the entry point symbol for the linker
+; Multiboot macros
+MBOOT_PAGE_ALIGN    equ 1 << 0
+MBOOT_MEM_INFO      equ 1 << 1
+MBOOT_HEADER_MAGIC  equ 0x1BADB002
+MBOOT_HEADER_FLAGS  equ MBOOT_PAGE_ALIGN | MBOOT_MEM_INFO
+MBOOT_CHECKSUM      equ -(MBOOT_HEADER_MAGIC + MBOOT_HEADER_FLAGS)
+
+section .multiboot
+align 4
+    dd MBOOT_HEADER_MAGIC
+    dd MBOOT_HEADER_FLAGS
+    dd MBOOT_CHECKSUM
+
+section .text
+global _start
+extern main
 
 _start:
-    call main       ; Call our C kernel's main() function
-    jmp $           ; If main somehow returns, loop infinitely to safely halt
+    cli                 ; Clear interrupts
+    call main           ; Jump to our C main() function in kernel/kernel.c
+    
+.halt_loop:
+    hlt                 ; Halt the CPU if main returns
+    jmp .halt_loop
