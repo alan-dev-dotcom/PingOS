@@ -10,7 +10,7 @@ Spartan automates low-level assembly, handles source file organization, manages 
 
 # Fallback mechanism
 
-Spartan features an intelligent self-healing driver compilation pipeline. If any graphics, wireless, or network driver file is missing or skipped during development, Spartan dynamically generates a clean, safe C stub on the fly. This guarantees that your kernel links successfully and boots into an ISO without ever throwing an "undefined reference" compilation error.
+ If any graphics, wireless, or network driver file is missing or skipped during development, Spartan dynamically generates a clean, safe C stub on the fly. This guarantees that your kernel links successfully and boots into an ISO without ever throwing an "undefined reference" compilation error.
 
 # Building & Running PingOS
 
