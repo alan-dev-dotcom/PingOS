@@ -15,15 +15,69 @@
 #include "io.h"
 
 /* ------------------------------------------------------------------------------
+ * SECTION 0: GPU & DRM/KMS External Subsystem Declarations
+ * ------------------------------------------------------------------------------
+ * Note: Declared as weak to prevent linker crashes if individual driver files
+ * are missing or skipped by our build script.
+ */
+
+// Modern DRM/KMS Subsystem Hooks
+__attribute__((weak)) int drm_core_init();
+__attribute__((weak)) void drm_print_diagnostics();
+__attribute__((weak)) int drm_set_mode(unsigned int width, unsigned int height, unsigned char bpp);
+__attribute__((weak)) void drm_restore_vga_text_mode();
+__attribute__((weak)) void drm_clear_screen(unsigned int color);
+__attribute__((weak)) void drm_put_pixel(unsigned int x, unsigned int y, unsigned int color);
+__attribute__((weak)) void drm_draw_rect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int color);
+__attribute__((weak)) void drm_draw_line(int x0, int y0, int x1, int y1, unsigned int color);
+__attribute__((weak)) void drm_page_flip();
+
+// High-Performance & Legacy GPU Drivers
+__attribute__((weak)) void amdgpu_init();
+__attribute__((weak)) void i915_init();
+__attribute__((weak)) void xe_init();
+__attribute__((weak)) void nouveau_init();
+__attribute__((weak)) void radeon_init();
+__attribute__((weak)) void virtio_gpu_init();
+__attribute__((weak)) void mgag200_init();
+__attribute__((weak)) void vboxvideo_init();
+__attribute__((weak)) void panfrost_init();
+__attribute__((weak)) void lima_init();
+
+// Network & Bluetooth Driver Hooks
+__attribute__((weak)) void iwlwifi_init();
+__attribute__((weak)) void ath9k_init();
+__attribute__((weak)) void ath10k_init();
+__attribute__((weak)) void ath11k_init();
+__attribute__((weak)) void rtw88_init();
+__attribute__((weak)) void rtl8187_init();
+__attribute__((weak)) void mt76_init();
+__attribute__((weak)) void brcmfmac_init();
+__attribute__((weak)) void b43_init();
+__attribute__((weak)) void btusb_init();
+
+// Wired Network Driver Hooks
+__attribute__((weak)) void e1000e_init();
+__attribute__((weak)) void igb_init();
+__attribute__((weak)) void igxbe_init();
+__attribute__((weak)) void i40e_init();
+__attribute__((weak)) void r8169_init();
+__attribute__((weak)) void tg3_init();
+__attribute__((weak)) void forcedeth_init();
+__attribute__((weak)) void sky2_init();
+__attribute__((weak)) void alx_init();
+__attribute__((weak)) void virtio_net_init();
+
+/* ------------------------------------------------------------------------------
  * SECTION 1: Hardware Port & VGA Display Configurations
  * ------------------------------------------------------------------------------
  * Note: Core VGA functions (vga_clear_screen, vga_put_char, vga_print_string)
- * are implemented in drivers/vga.c. Here we maintain global terminal layout
+ * are implemented in drivers/gpu/vga.c. Here we maintain global terminal layout
  * color attributes and definitions to configure output styles.
  */
 
-// Forward declaration of VGA cursor update function implemented in drivers/vga.c
-extern void /* update_hardware_cursor(); */
+// Forward declaration of VGA cursor update function implemented in drivers/gpu/vga.c
+extern void vga_update_cursor(int row, int col);
 
 // VGA Text Mode Character Color Schemes
 #define COLOR_BLACK_ON_BLACK   0x00
@@ -46,9 +100,6 @@ extern void /* update_hardware_cursor(); */
 #define VGA_COLS               80
 #define VGA_ROWS               25
 #define VGA_SCREEN_SIZE        (VGA_COLS * VGA_ROWS)
-
-// Global Terminal State Variables
-;
 
 static char current_prompt_color = COLOR_WHITE_ON_BLACK;
 static char current_text_color   = COLOR_GREY_ON_BLACK;
@@ -394,12 +445,10 @@ double sqrt(double value) {
 
 /* Sine approximation using Taylor Series expansions */
 double sin_approx(double x) {
-    // Normalization to -PI to PI
     double pi = 3.1415926535;
     while (x > pi) x -= 2 * pi;
     while (x < -pi) x += 2 * pi;
     
-    // Sin Taylor series: x - x^3/6 + x^5/120 - x^7/5040
     double term1 = x;
     double term3 = (x * x * x) / 6.0;
     double term5 = (x * x * x * x * x) / 120.0;
@@ -410,7 +459,6 @@ double sin_approx(double x) {
 
 /* Cosine approximation using Taylor Series expansions */
 double cos_approx(double x) {
-    // Cos Taylor series: 1 - x^2/2 + x^4/24 - x^6/720
     double pi = 3.1415926535;
     while (x > pi) x -= 2 * pi;
     while (x < -pi) x += 2 * pi;
@@ -442,17 +490,12 @@ char wait_for_key() {
         if (key != 0) {
             return key;
         }
-        // Yield to let multi-tasker cycle smoothly during waiting
         __asm__ volatile("pause");
     }
 }
 
 /* ------------------------------------------------------------------------------
  * SECTION 3: Dynamic Heap Memory Management Subsystem
- * ------------------------------------------------------------------------------
- * Dynamic core memory allocator managing an in-memory 4 Megabyte region.
- * Uses a robust header-structured doubly-linked list configuration to implement
- * standard malloc, free, calloc, and realloc.
  * ------------------------------------------------------------------------------
  */
 
@@ -480,14 +523,11 @@ void init_heap() {
 /* Safe dynamic memory allocation (First-Fit Algorithm) */
 void* kmalloc(int size) {
     if (size <= 0) return 0;
-    
-    // Align block requirements to 4-byte boundaries
     size = (size + 3) & ~3;
 
     heap_block_t* curr = heap_start;
     while (curr != 0) {
         if (curr->is_free && curr->size >= size) {
-            // Check if remaining memory is large enough to warrant a block split
             if (curr->size >= size + (int)sizeof(heap_block_t) + 4) {
                 heap_block_t* next_block = (heap_block_t*)((char*)curr + sizeof(heap_block_t) + size);
                 next_block->size = curr->size - size - sizeof(heap_block_t);
@@ -506,17 +546,16 @@ void* kmalloc(int size) {
         }
         curr = curr->next;
     }
-    return 0; // Heap out-of-memory safe failure escape
+    return 0;
 }
 
-/* Release memory segment, fusing neighboring free elements to combat fragmentation */
+/* Release memory segment, fusing neighboring free elements */
 void kfree(void* ptr) {
     if (!ptr) return;
 
     heap_block_t* block = (heap_block_t*)((char*)ptr - sizeof(heap_block_t));
     block->is_free = 1;
 
-    // Deflagward combination of blocks
     if (block->next && block->next->is_free) {
         block->size += sizeof(heap_block_t) + block->next->size;
         block->next = block->next->next;
@@ -525,7 +564,6 @@ void kfree(void* ptr) {
         }
     }
 
-    // Debackward combination of blocks
     if (block->prev && block->prev->is_free) {
         block->prev->size += sizeof(heap_block_t) + block->size;
         block->prev->next = block->next;
@@ -551,7 +589,7 @@ void* krealloc(void* ptr, int new_size) {
     
     heap_block_t* block = (heap_block_t*)((char*)ptr - sizeof(heap_block_t));
     if (block->size >= new_size) {
-        return ptr; // Allocation is already large enough
+        return ptr;
     }
 
     void* new_ptr = kmalloc(new_size);
@@ -586,8 +624,6 @@ void get_heap_diagnostics(int* out_total, int* out_used, int* out_free_blocks) {
 /* ------------------------------------------------------------------------------
  * SECTION 4: GDT (Global Descriptor Table) Configuration
  * ------------------------------------------------------------------------------
- * Setup bare-metal 32-bit segment descriptor tables.
- * ------------------------------------------------------------------------------
  */
 
 typedef struct gdt_entry {
@@ -607,10 +643,8 @@ typedef struct gdt_ptr {
 static gdt_entry_t gdt_entries[5];
 static gdt_ptr_t   gdt_register;
 
-/* Low-level assembly injector to refresh GDT registers and descriptors */
 extern void gdt_flush_asm(unsigned int gdt_ptr_addr);
 
-/* Program GDT segments */
 void set_gdt_gate(int num, unsigned int base, unsigned int limit, unsigned char access, unsigned char gran) {
     gdt_entries[num].base_low    = (base & 0xFFFF);
     gdt_entries[num].base_middle = (base >> 16) & 0xFF;
@@ -623,23 +657,16 @@ void set_gdt_gate(int num, unsigned int base, unsigned int limit, unsigned char 
     gdt_entries[num].access      = access;
 }
 
-/* Bootstraps full protected segment zones */
 void init_gdt() {
     gdt_register.limit = (sizeof(gdt_entry_t) * 5) - 1;
     gdt_register.base  = (unsigned int)&gdt_entries;
 
-    // Null Segment Descriptor (Required by x86 standard)
     set_gdt_gate(0, 0, 0, 0, 0);
-    // Code Segment (Kernel Space ring 0)
     set_gdt_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
-    // Data Segment (Kernel Space ring 0)
     set_gdt_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
-    // Code Segment (User Land ring 3)
     set_gdt_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF);
-    // Data Segment (User Land ring 3)
     set_gdt_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
 
-    // Refresh segments using inline assembly to load GDT
     __asm__ volatile (
         "lgdt %0\n\t"
         "ljmp $0x08, $.reload_segments\n\t"
@@ -675,7 +702,6 @@ typedef struct idt_ptr {
 static idt_entry_t idt_entries[256];
 static idt_ptr_t   idt_register;
 
-/* Low-level state tracking CPU registers */
 typedef struct registers {
     unsigned int ds;                                      
     unsigned int edi, esi, ebp, esp, ebx, edx, ecx, eax; 
@@ -685,7 +711,6 @@ typedef struct registers {
 
 static void* interrupt_handlers[256];
 
-/* Register interrupt route */
 void set_idt_gate(unsigned char num, unsigned int base, unsigned short sel, unsigned char flags) {
     idt_entries[num].base_low  = (base & 0xFFFF);
     idt_entries[num].base_high = (base >> 16) & 0xFFFF;
@@ -694,7 +719,6 @@ void set_idt_gate(unsigned char num, unsigned int base, unsigned short sel, unsi
     idt_entries[num].flags     = flags;
 }
 
-/* Internal assembly declaration signatures for interrupts */
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();  
 extern void isr4();  extern void isr5();  extern void isr6();  extern void isr7();  
 extern void isr8();  extern void isr9();  extern void isr10(); extern void isr11(); 
@@ -713,13 +737,11 @@ void register_interrupt_handler(unsigned char n, void* handler) {
     interrupt_handlers[n] = handler;
 }
 
-/* Main router of CPU exception faults */
 void core_interrupt_handler(registers_t* regs) {
     if (interrupt_handlers[regs->int_no] != 0) {
         void (*handler)(registers_t*) = interrupt_handlers[regs->int_no];
         handler(regs);
     } else {
-        // Safe Kernel Panic screen visual block
         vga_clear_screen();
         vga_print_string("\n================================================================================\n", COLOR_WHITE_ON_RED);
         vga_print_string("                     !!! PINGOS KERNEL PANIC OCCURRED !!!                       \n", COLOR_WHITE_ON_RED);
@@ -746,7 +768,6 @@ void core_interrupt_handler(registers_t* regs) {
     }
 }
 
-/* Base assembly helper framework definitions */
 __asm__(
     ".global isr_common_stub\n"
     "isr_common_stub:\n"
@@ -792,7 +813,6 @@ __asm__(
         ); \
     }
 
-// System Exceptions Hooks Generation (Hardware 0 - 31)
 DECLARE_ISR_NOERR(0)  DECLARE_ISR_NOERR(1)  DECLARE_ISR_NOERR(2)  DECLARE_ISR_NOERR(3)
 DECLARE_ISR_NOERR(4)  DECLARE_ISR_NOERR(5)  DECLARE_ISR_NOERR(6)  DECLARE_ISR_NOERR(7)
 DECLARE_ISR_ERR(8)    DECLARE_ISR_NOERR(9)  DECLARE_ISR_ERR(10)   DECLARE_ISR_ERR(11)
@@ -802,7 +822,6 @@ DECLARE_ISR_NOERR(20) DECLARE_ISR_NOERR(21) DECLARE_ISR_NOERR(22) DECLARE_ISR_NO
 DECLARE_ISR_NOERR(24) DECLARE_ISR_NOERR(25) DECLARE_ISR_NOERR(26) DECLARE_ISR_NOERR(27)
 DECLARE_ISR_NOERR(28) DECLARE_ISR_NOERR(29) DECLARE_ISR_ERR(30)   DECLARE_ISR_NOERR(31)
 
-/* Master PIC controller redirecting IRQs */
 #define DECLARE_IRQ(num, int_num) \
     void irq##num() { \
         __asm__ volatile( \
@@ -821,9 +840,9 @@ DECLARE_IRQ(12, 44) DECLARE_IRQ(13, 45) DECLARE_IRQ(14, 46) DECLARE_IRQ(15, 47)
 
 void core_irq_handler(registers_t* regs) {
     if (regs->int_no >= 40) {
-        outb_port(0xA0, 0x20); // Send reset signal to Slave PIC
+        outb_port(0xA0, 0x20);
     }
-    outb_port(0x20, 0x20); // Send reset signal to Master PIC
+    outb_port(0x20, 0x20);
 
     if (interrupt_handlers[regs->int_no] != 0) {
         void (*handler)(registers_t*) = interrupt_handlers[regs->int_no];
@@ -855,25 +874,23 @@ __asm__(
     "    iret\n"
 );
 
-/* PIC Remapper Core */
 void pic_remap() {
-    outb_port(0x20, 0x11); // Initialize Master
-    outb_port(0xA0, 0x11); // Initialize Slave
+    outb_port(0x20, 0x11);
+    outb_port(0xA0, 0x11);
     
-    outb_port(0x21, 0x20); // Remap Master vector boundaries (32-39)
-    outb_port(0xA1, 0x28); // Remap Slave vector boundaries (40-47)
+    outb_port(0x21, 0x20);
+    outb_port(0xA1, 0x28);
     
-    outb_port(0x21, 0x04); // Master-Slave linkage setup
+    outb_port(0x21, 0x04);
     outb_port(0xA1, 0x02);
     
-    outb_port(0x21, 0x01); // 8086 Environment mode
+    outb_port(0x21, 0x01);
     outb_port(0xA1, 0x01);
     
-    outb_port(0x21, 0x00); // Unmask Master interrupt line
-    outb_port(0xA1, 0x00); // Unmask Slave interrupt line
+    outb_port(0x21, 0x00);
+    outb_port(0xA1, 0x00);
 }
 
-/* Master IDT initialization sequence */
 void init_idt() {
     idt_register.limit = (sizeof(idt_entry_t) * 256) - 1;
     idt_register.base  = (unsigned int)&idt_entries;
@@ -882,7 +899,6 @@ void init_idt() {
 
     pic_remap();
 
-    // exceptions routing (0 - 31)
     set_idt_gate(0, (unsigned int)isr0, 0x08, 0x8E);
     set_idt_gate(1, (unsigned int)isr1, 0x08, 0x8E);
     set_idt_gate(2, (unsigned int)isr2, 0x08, 0x8E);
@@ -916,7 +932,6 @@ void init_idt() {
     set_idt_gate(30, (unsigned int)isr30, 0x08, 0x8E);
     set_idt_gate(31, (unsigned int)isr31, 0x08, 0x8E);
 
-    // IRQs mapping (32 - 47)
     set_idt_gate(32, (unsigned int)irq0, 0x08, 0x8E);
     set_idt_gate(33, (unsigned int)irq1, 0x08, 0x8E);
     set_idt_gate(34, (unsigned int)irq2, 0x08, 0x8E);
@@ -940,9 +955,6 @@ void init_idt() {
 /* ------------------------------------------------------------------------------
  * SECTION 6: Multi-Tasking & Context Switching Scheduler Engine
  * ------------------------------------------------------------------------------
- * Cooperative multi-tasker managing Process Control Blocks (PCBs) 
- * inside 32-bit protected mode.
- * ------------------------------------------------------------------------------
  */
 
 #define MAX_SYSTEM_TASKS 16
@@ -957,25 +969,23 @@ typedef enum task_state {
 typedef struct task_control_block {
     int id;
     char name[32];
-    unsigned int esp; // Stack pointer snapshot
-    unsigned int ebp; // Base frame snapshot
+    unsigned int esp; 
+    unsigned int ebp; 
     task_state_t state;
     int ticks_run;
-    char stack_space[4096]; // Individual virtualized thread stack memory
+    char stack_space[4096]; 
 } tcb_t;
 
 static tcb_t* task_queue[MAX_SYSTEM_TASKS];
 static int    total_registered_tasks = 0;
 static int    current_executing_index = 0;
 
-/* Initialize Multitasking Pipeline */
 void init_scheduler() {
     memset(task_queue, 0, sizeof(tcb_t*) * MAX_SYSTEM_TASKS);
     total_registered_tasks = 0;
     current_executing_index = 0;
 }
 
-/* Add custom thread/task into loop */
 int create_kernel_task(const char* name, void (*entry_point)()) {
     if (total_registered_tasks >= MAX_SYSTEM_TASKS) return -1;
 
@@ -988,15 +998,12 @@ int create_kernel_task(const char* name, void (*entry_point)()) {
     new_task->state = TASK_STATE_READY;
     new_task->ticks_run = 0;
 
-    // Prep stack framework space
     unsigned int* local_stack = (unsigned int*)&new_task->stack_space[4092];
     
-    // Simulate initial CPU context pushed on the stack
-    *(--local_stack) = 0x0202;                // Default EFLAGS with interrupts enabled
-    *(--local_stack) = 0x08;                  // CS (Kernel Code Selector)
-    *(--local_stack) = (unsigned int)entry_point; // Initial Instruction Pointer (EIP)
+    *(--local_stack) = 0x0202;                
+    *(--local_stack) = 0x08;                  
+    *(--local_stack) = (unsigned int)entry_point; 
     
-    // Push general purpose registers initialized to 0
     for (int i = 0; i < 8; i++) {
         *(--local_stack) = 0;
     }
@@ -1009,19 +1016,17 @@ int create_kernel_task(const char* name, void (*entry_point)()) {
     return new_task->id;
 }
 
-/* Shift process context cooperatively */
 void task_yield() {
     if (total_registered_tasks <= 1) return;
 
     int old_index = current_executing_index;
     int next_index = (old_index + 1) % total_registered_tasks;
 
-    // Search for next ready task
     while (task_queue[next_index]->state != TASK_STATE_READY && next_index != old_index) {
         next_index = (next_index + 1) % total_registered_tasks;
     }
 
-    if (next_index == old_index) return; // No other runnable tasks
+    if (next_index == old_index) return; 
 
     tcb_t* current_task = task_queue[old_index];
     tcb_t* next_task = task_queue[next_index];
@@ -1030,7 +1035,6 @@ void task_yield() {
     next_task->state = TASK_STATE_RUNNING;
     current_executing_index = next_index;
 
-    // Inline Assembly Context Switch
     __asm__ volatile(
         "pusha\n\t"
         "mov %%esp, %0\n\t"
@@ -1044,7 +1048,6 @@ void task_yield() {
     );
 }
 
-/* Stop active task safely */
 void exit_kernel_task() {
     tcb_t* curr = task_queue[current_executing_index];
     curr->state = TASK_STATE_TERMINATED;
@@ -1053,8 +1056,6 @@ void exit_kernel_task() {
 
 /* ------------------------------------------------------------------------------
  * SECTION 7: PingFS Virtual In-Memory File System (VFS)
- * ------------------------------------------------------------------------------
- * Hierarchical virtual filesystem in RAM representing inodes, folders, files.
  * ------------------------------------------------------------------------------
  */
 
@@ -1083,23 +1084,20 @@ static pingfs_node_t* pingfs_root = 0;
 static pingfs_node_t* pingfs_current_dir = 0;
 static pingfs_node_t  pingfs_nodes_pool[PINGFS_MAX_FILES];
 
-/* Prepare Virtual In-Memory Disk structures */
 void init_pingfs() {
     memset(pingfs_nodes_pool, 0, sizeof(pingfs_node_t) * PINGFS_MAX_FILES);
 
-    // Bootstrap Root Node directory "/"
     pingfs_root = &pingfs_nodes_pool[0];
     strncpy(pingfs_root->name, "/", PINGFS_MAX_NAME_LEN - 1);
     pingfs_root->type = PINGFS_DIRECTORY;
     pingfs_root->size = 0;
     pingfs_root->in_use = 1;
-    pingfs_root->parent = pingfs_root; // Root is its own parent
+    pingfs_root->parent = pingfs_root; 
     pingfs_root->child_count = 0;
 
     pingfs_current_dir = pingfs_root;
 }
 
-/* Allocate new file system node */
 pingfs_node_t* allocate_vnode(const char* name, node_type_t type) {
     for (int i = 1; i < PINGFS_MAX_FILES; i++) {
         if (!pingfs_nodes_pool[i].in_use) {
@@ -1113,33 +1111,30 @@ pingfs_node_t* allocate_vnode(const char* name, node_type_t type) {
             return node;
         }
     }
-    return 0; // File System ran out of free blocks (inodes)
+    return 0; 
 }
 
-/* Create File Node */
 int pingfs_create_file(const char* name) {
-    // Check if file already exists in current directory
     for (int i = 0; i < pingfs_current_dir->child_count; i++) {
         if (strcmp(pingfs_current_dir->children[i]->name, name) == 0) {
-            return -1; // File exists
+            return -1; 
         }
     }
 
-    if (pingfs_current_dir->child_count >= PINGFS_MAX_FILES) return -2; // Directory Full
+    if (pingfs_current_dir->child_count >= PINGFS_MAX_FILES) return -2; 
 
     pingfs_node_t* file_node = allocate_vnode(name, PINGFS_FILE);
-    if (!file_node) return -3; // Node Allocation Failure
+    if (!file_node) return -3; 
 
     file_node->parent = pingfs_current_dir;
     pingfs_current_dir->children[pingfs_current_dir->child_count++] = file_node;
     return 0;
 }
 
-/* Create Directory Node */
 int pingfs_mkdir(const char* name) {
     for (int i = 0; i < pingfs_current_dir->child_count; i++) {
         if (strcmp(pingfs_current_dir->children[i]->name, name) == 0) {
-            return -1; // Directory exists
+            return -1; 
         }
     }
 
@@ -1153,7 +1148,6 @@ int pingfs_mkdir(const char* name) {
     return 0;
 }
 
-/* Write text data inside File block */
 int pingfs_write_file(const char* name, const char* text) {
     pingfs_node_t* file_node = 0;
     for (int i = 0; i < pingfs_current_dir->child_count; i++) {
@@ -1164,9 +1158,8 @@ int pingfs_write_file(const char* name, const char* text) {
         }
     }
 
-    if (!file_node) return -1; // File not found
+    if (!file_node) return -1; 
 
-    // Clear old blocks if present
     for (int i = 0; i < PINGFS_MAX_BLOCKS; i++) {
         if (file_node->data_blocks[i]) {
             kfree(file_node->data_blocks[i]);
@@ -1180,7 +1173,7 @@ int pingfs_write_file(const char* name, const char* text) {
 
     for (int b = 0; b < needed_blocks; b++) {
         file_node->data_blocks[b] = (char*)kcalloc(PINGFS_BLOCK_SIZE, 1);
-        if (!file_node->data_blocks[b]) return -2; // Out of heap memory
+        if (!file_node->data_blocks[b]) return -2; 
 
         int bytes_to_copy = text_len - (b * PINGFS_BLOCK_SIZE);
         if (bytes_to_copy > PINGFS_BLOCK_SIZE) bytes_to_copy = PINGFS_BLOCK_SIZE;
@@ -1192,7 +1185,6 @@ int pingfs_write_file(const char* name, const char* text) {
     return 0;
 }
 
-/* Read text content from File block */
 char* pingfs_read_file(const char* name) {
     pingfs_node_t* file_node = 0;
     for (int i = 0; i < pingfs_current_dir->child_count; i++) {
@@ -1203,7 +1195,7 @@ char* pingfs_read_file(const char* name) {
         }
     }
 
-    if (!file_node) return 0; // File not found
+    if (!file_node) return 0; 
 
     char* buffer = (char*)kcalloc(file_node->size + 1, 1);
     if (!buffer) return 0;
@@ -1222,7 +1214,6 @@ char* pingfs_read_file(const char* name) {
     return buffer;
 }
 
-/* Delete File or Directory Node */
 int pingfs_remove(const char* name) {
     int found_index = -1;
     for (int i = 0; i < pingfs_current_dir->child_count; i++) {
@@ -1232,16 +1223,14 @@ int pingfs_remove(const char* name) {
         }
     }
 
-    if (found_index == -1) return -1; // Node not found
+    if (found_index == -1) return -1; 
 
     pingfs_node_t* target = pingfs_current_dir->children[found_index];
 
-    // Directories can only be removed if empty
     if (target->type == PINGFS_DIRECTORY && target->child_count > 0) {
         return -2; 
     }
 
-    // Clean File Blocks
     if (target->type == PINGFS_FILE) {
         for (int b = 0; b < PINGFS_MAX_BLOCKS; b++) {
             if (target->data_blocks[b]) {
@@ -1253,7 +1242,6 @@ int pingfs_remove(const char* name) {
 
     target->in_use = 0;
 
-    // Shift child list down
     for (int i = found_index; i < pingfs_current_dir->child_count - 1; i++) {
         pingfs_current_dir->children[i] = pingfs_current_dir->children[i + 1];
     }
@@ -1262,7 +1250,6 @@ int pingfs_remove(const char* name) {
     return 0;
 }
 
-/* Navigate directories */
 int pingfs_cd(const char* name) {
     if (strcmp(name, "..") == 0) {
         pingfs_current_dir = pingfs_current_dir->parent;
@@ -1280,10 +1267,9 @@ int pingfs_cd(const char* name) {
             return 0;
         }
     }
-    return -1; // Directory not found
+    return -1; 
 }
 
-/* Fetch dynamic workspace path */
 void get_current_working_directory_path(char* path) {
     if (pingfs_current_dir == pingfs_root) {
         strcpy(path, "/");
@@ -1323,7 +1309,6 @@ typedef struct pci_device {
 static pci_device_t pci_device_list[64];
 static int          pci_devices_detected_count = 0;
 
-/* Read PCI Configuration Registers via low-level I/O Ports */
 unsigned short pci_config_read_word(unsigned char bus, unsigned char slot, unsigned char func, unsigned char offset) {
     unsigned int address;
     unsigned int lbus  = (unsigned int)bus;
@@ -1331,7 +1316,6 @@ unsigned short pci_config_read_word(unsigned char bus, unsigned char slot, unsig
     unsigned int lfunc = (unsigned int)func;
     unsigned short tmp = 0;
 
-    // Pack into configuration address structure
     address = (unsigned int)((lbus << 16) | (lslot << 11) |
               (lfunc << 8) | (offset & 0xFC) | ((unsigned int)0x80000000));
 
@@ -1340,7 +1324,6 @@ unsigned short pci_config_read_word(unsigned char bus, unsigned char slot, unsig
     return tmp;
 }
 
-/* Parse System PCI Bus */
 void scan_pci_bus() {
     pci_devices_detected_count = 0;
     memset(pci_device_list, 0, sizeof(pci_device_t) * 64);
@@ -1349,7 +1332,7 @@ void scan_pci_bus() {
         for (unsigned int slot = 0; slot < 32; slot++) {
             for (unsigned int func = 0; func < 8; func++) {
                 unsigned short vendor = pci_config_read_word(bus, slot, func, 0);
-                if (vendor != 0xFFFF) { // Valid active vendor code found
+                if (vendor != 0xFFFF) { 
                     unsigned short device = pci_config_read_word(bus, slot, func, 2);
                     unsigned short class_word = pci_config_read_word(bus, slot, func, 10);
                     
@@ -1370,7 +1353,6 @@ void scan_pci_bus() {
     }
 }
 
-/* Map PCI Vendor Code into brand names */
 const char* resolve_pci_vendor(unsigned short vendor) {
     switch (vendor) {
         case 0x8086: return "Intel Corp.";
@@ -1380,11 +1362,11 @@ const char* resolve_pci_vendor(unsigned short vendor) {
         case 0x15AD: return "VMware Inc. (Virtual Device)";
         case 0x1AF4: return "VirtIO Adapter Virtual Platform";
         case 0x1013: return "Cirrus Logic Hardware";
+        case 0x1234: return "Bochs/QEMU VGA Card";
         default:     return "Unknown Vendor Platform";
     }
 }
 
-/* Map Class Codes into structural descriptions */
 const char* resolve_pci_class(unsigned char class_id) {
     switch (class_id) {
         case 0x00: return "Legacy Devices";
@@ -1396,9 +1378,74 @@ const char* resolve_pci_class(unsigned char class_id) {
         case 0x06: return "System Bus Bridge Core";
         case 0x07: return "Simple Communication Controller";
         case 0x0C: return "Serial Bus Controller (USB/Firewire)";
-        default:   // Unknown Fallback
+        default:   
             return "General System Core Controller";
     }
+}
+
+/* ------------------------------------------------------------------------------
+ * SECTION 8.5: Modern GPU Probing Pipeline
+ * ------------------------------------------------------------------------------
+ */
+
+void probe_all_gpus() {
+    vga_print_string("GPU Core: Scanning motherboard PCI lines and probing drivers...\n", 0x0F);
+    
+    // Probe all standard graphics hardware initializers
+    if (intel_gpu_init) intel_gpu_init();
+    if (amdgpu_init) amdgpu_init();
+    if (i915_init) i915_init();
+    if (xe_init) xe_init();
+    if (nouveau_init) nouveau_init();
+    if (radeon_init) radeon_init();
+    if (virtio_gpu_init) virtio_gpu_init();
+    if (mgag200_init) mgag200_init();
+    if (vboxvideo_init) vboxvideo_init();
+    if (panfrost_init) panfrost_init();
+    if (lima_init) lima_init();
+    
+    // Set up core DRM Device structures
+    if (drm_core_init) drm_core_init();
+}
+
+/* ------------------------------------------------------------------------------
+ * SECTION 8.6: Wireless Network & Bluetooth Probing Pipeline
+ * ------------------------------------------------------------------------------
+ */
+
+void probe_all_wireless() {
+    vga_print_string("Network Core: Probing WiFi and Bluetooth RF controllers...\n", 0x0F);
+    
+    if (iwlwifi_init) iwlwifi_init();
+    if (ath9k_init) ath9k_init();
+    if (ath10k_init) ath10k_init();
+    if (ath11k_init) ath11k_init();
+    if (rtw88_init) rtw88_init();
+    if (rtl8187_init) rtl8187_init();
+    if (mt76_init) mt76_init();
+    if (brcmfmac_init) brcmfmac_init();
+    if (b43_init) b43_init();
+    if (btusb_init) btusb_init();
+}
+
+/* ------------------------------------------------------------------------------
+ * SECTION 8.7: Wired Ethernet Network Probing Pipeline
+ * ------------------------------------------------------------------------------
+ */
+
+void probe_all_ethernet() {
+    vga_print_string("Ethernet Core: Probing wired network adapters...\n", 0x0F);
+    
+    if (e1000e_init) e1000e_init();
+    if (igb_init) igb_init();
+    if (igxbe_init) igxbe_init();
+    if (i40e_init) i40e_init();
+    if (r8169_init) r8169_init();
+    if (tg3_init) tg3_init();
+    if (forcedeth_init) forcedeth_init();
+    if (sky2_init) sky2_init();
+    if (alx_init) alx_init();
+    if (virtio_net_init) virtio_net_init();
 }
 
 /* ------------------------------------------------------------------------------
@@ -1406,50 +1453,42 @@ const char* resolve_pci_class(unsigned char class_id) {
  * ------------------------------------------------------------------------------
  */
 
-/* Renders beautiful visual windows directly using standard text glyphs */
 void tui_draw_window(int start_x, int start_y, int width, int height, const char* title, char color) {
     unsigned short* vga_mem = (unsigned short*)VGA_ADDRESS;
 
-    // Ensure parameters match boundaries
     if (start_x < 0) start_x = 0;
     if (start_y < 0) start_y = 0;
     if (start_x + width > VGA_COLS) width = VGA_COLS - start_x;
     if (start_y + height > VGA_ROWS) height = VGA_ROWS - start_y;
 
-    // Fill Window Area
     for (int y = start_y + 1; y < start_y + height - 1; y++) {
         for (int x = start_x + 1; x < start_x + width - 1; x++) {
             vga_mem[y * VGA_COLS + x] = (color << 8) | ' ';
         }
     }
 
-    // Border Characters
-    char horizontal_line = 205; // '=' style double line
-    char vertical_line   = 186; // '||' style double line
+    char horizontal_line = 205; 
+    char vertical_line   = 186; 
     char top_left_corner = 201;
     char top_right_corner = 187;
     char bottom_left_corner = 200;
     char bottom_right_corner = 188;
 
-    // Draw top and bottom boundaries
     for (int x = start_x + 1; x < start_x + width - 1; x++) {
         vga_mem[start_y * VGA_COLS + x] = (color << 8) | horizontal_line;
         vga_mem[(start_y + height - 1) * VGA_COLS + x] = (color << 8) | horizontal_line;
     }
 
-    // Draw side boundaries
     for (int y = start_y + 1; y < start_y + height - 1; y++) {
         vga_mem[y * VGA_COLS + start_x] = (color << 8) | vertical_line;
         vga_mem[y * VGA_COLS + (start_x + width - 1)] = (color << 8) | vertical_line;
     }
 
-    // Corner Caps
     vga_mem[start_y * VGA_COLS + start_x] = (color << 8) | top_left_corner;
     vga_mem[start_y * VGA_COLS + (start_x + width - 1)] = (color << 8) | top_right_corner;
     vga_mem[(start_y + height - 1) * VGA_COLS + start_x] = (color << 8) | bottom_left_corner;
     vga_mem[(start_y + height - 1) * VGA_COLS + (start_x + width - 1)] = (color << 8) | bottom_right_corner;
 
-    // Draw Title Header inside borders
     int title_len = strlen(title);
     if (title_len > width - 4) title_len = width - 4;
     int title_start = start_x + (width - title_len) / 2;
@@ -1459,23 +1498,19 @@ void tui_draw_window(int start_x, int start_y, int width, int height, const char
     }
 }
 
-/* Standard Status Bar Rendering */
 void tui_draw_status_bar(const char* left_text, const char* right_text, char color) {
     unsigned short* vga_mem = (unsigned short*)VGA_ADDRESS;
     int target_row = VGA_ROWS - 1;
 
-    // Clear whole status row
     for (int x = 0; x < VGA_COLS; x++) {
         vga_mem[target_row * VGA_COLS + x] = (color << 8) | ' ';
     }
 
-    // Render left text alignment
     int left_len = strlen(left_text);
     for (int i = 0; i < left_len && i < 40; i++) {
         vga_mem[target_row * VGA_COLS + 2 + i] = (color << 8) | left_text[i];
     }
 
-    // Render right text alignment
     int right_len = strlen(right_text);
     int right_start = VGA_COLS - right_len - 2;
     if (right_start > 41) {
@@ -1490,25 +1525,21 @@ void tui_draw_status_bar(const char* left_text, const char* right_text, char col
  * ------------------------------------------------------------------------------
  */
 
-/* Query raw values directly from CMOS ports */
 unsigned char read_cmos_register(int reg) {
     outb_port(0x70, reg);
     return inb_port(0x71);
 }
 
-/* Ensure data is stable during updates */
 int is_cmos_update_in_progress() {
     outb_port(0x70, 0x0A);
     return (inb_port(0x71) & 0x80);
 }
 
-/* Safely fetch CMOS value */
 unsigned char get_cmos_value(int reg) {
     while (is_cmos_update_in_progress());
     return read_cmos_register(reg);
 }
 
-/* Prints decoded real time values directly to terminal */
 void print_system_date_time() {
     unsigned char second = get_cmos_value(0x00);
     unsigned char minute = get_cmos_value(0x02);
@@ -1523,7 +1554,6 @@ void print_system_date_time() {
         century = b_century;
     }
 
-    // Decode BCD values if active
     unsigned char registerB = get_cmos_value(0x0B);
     if (!(registerB & 0x04)) {
         second = (second & 0x0F) + ((second >> 4) * 10);
@@ -1581,7 +1611,6 @@ void print_cpu_info() {
     unsigned int eax, ebx, ecx, edx;
     char vendor_str[13];
 
-    // Read CPU Vendor brand string (EAX=0)
     cpuid_get_info(0, &eax, &ebx, &ecx, &edx);
     *((unsigned int*)&vendor_str[0]) = ebx;
     *((unsigned int*)&vendor_str[4]) = edx;
@@ -1592,7 +1621,6 @@ void print_cpu_info() {
     vga_print_string(vendor_str, current_prompt_color);
     vga_print_string("\n", current_text_color);
 
-    // Read CPU Features (EAX=1)
     cpuid_get_info(1, &eax, &ebx, &ecx, &edx);
 
     vga_print_string("Processor Diagnostics: ", current_text_color);
@@ -1714,7 +1742,6 @@ void execute_calculator_logic(const char* args) {
     char op = ' ';
     int i = 0, j = 0;
 
-    // Parse out first operand
     while (args[i] == ' ' || args[i] == '\t') i++;
     while (args[i] >= '0' && args[i] <= '9') {
         if (j < 15) s_num1[j++] = args[i];
@@ -1722,7 +1749,6 @@ void execute_calculator_logic(const char* args) {
     }
     s_num1[j] = '\0';
 
-    // Parse operator
     while (args[i] == ' ' || args[i] == '\t') i++;
     if (args[i] == '+' || args[i] == '-' || args[i] == '*' || args[i] == '/' || args[i] == '!' || args[i] == '^' || args[i] == 'v') {
         op = args[i];
@@ -1733,7 +1759,6 @@ void execute_calculator_logic(const char* args) {
         return;
     }
 
-    // Handles single operand operations
     if (op == '!') {
         int val = atoi(s_num1);
         int res = compute_factorial(val);
@@ -1762,7 +1787,6 @@ void execute_calculator_logic(const char* args) {
         return;
     }
 
-    // Parse second operand
     j = 0;
     while (args[i] == ' ' || args[i] == '\t') i++;
     while (args[i] >= '0' && args[i] <= '9') {
@@ -1865,7 +1889,6 @@ void execute_hex_dump(const char* args) {
         return;
     }
 
-    // Hex converter string parse
     unsigned int address = 0;
     for (int i = 0; s_addr[i] != '\0'; i++) {
         char c = s_addr[i];
@@ -1896,7 +1919,6 @@ void execute_hex_dump(const char* args) {
         vga_print_string(row_addr_hex, current_prompt_color);
         vga_print_string(" | ", current_text_color);
 
-        // Hex representations
         for (int col = 0; col < 8; col++) {
             unsigned char b = ptr[row * 8 + col];
             char val_hex[4];
@@ -1911,7 +1933,6 @@ void execute_hex_dump(const char* args) {
 
         vga_print_string(" | ", current_text_color);
 
-        // ASCII representation
         for (int col = 0; col < 8; col++) {
             unsigned char b = ptr[row * 8 + col];
             if (b >= 32 && b <= 126) {
@@ -1937,11 +1958,11 @@ void sys_reboot() {
     do {
         temp = inb_port(0x64);
         if (temp & 1) {
-            inb_port(0x60); // Read/Flush output buffers
+            inb_port(0x60); 
         }
     } while (temp & 2);
 
-    outb_port(0x64, 0xFE); // Signal the keyboard controller command port to trigger CPU reset pin
+    outb_port(0x64, 0xFE); 
 
     while (1) {
         __asm__ volatile("hlt");
@@ -1968,7 +1989,6 @@ void sys_halt() {
  * ------------------------------------------------------------------------------
  */
 
-/* Clean text-based maze adventure game */
 void play_kernel_quest() {
     vga_clear_screen();
     vga_print_string("================================================================================\n", COLOR_CYAN_ON_BLACK);
@@ -1980,7 +2000,6 @@ void play_kernel_quest() {
     vga_print_string("  -- Press any key to begin the execution thread --", COLOR_WHITE_ON_BLACK);
     wait_for_key();
 
-    // Board configuration parameters
     #define MAZE_W 16
     #define MAZE_H 10
     
@@ -2013,17 +2032,16 @@ void play_kernel_quest() {
         vga_print_string(s_tot, COLOR_WHITE_ON_BLACK);
         vga_print_string("] Memory Pages\n\n", COLOR_CYAN_ON_BLACK);
 
-        // Render board
         for (int y = 0; y < MAZE_H; y++) {
             for (int x = 0; x < MAZE_W; x++) {
                 if (x == player_x && y == player_y) {
-                    vga_print_string("@ ", COLOR_WHITE_ON_BLACK); // Player
+                    vga_print_string("@ ", COLOR_WHITE_ON_BLACK); 
                 } else if (maze[y][x] == '#') {
-                    vga_print_string("# ", COLOR_GREEN_ON_BLACK); // Barrier
+                    vga_print_string("# ", COLOR_GREEN_ON_BLACK); 
                 } else if (maze[y][x] == 'P') {
-                    vga_print_string("P ", COLOR_AMBER_ON_BLACK); // Page
+                    vga_print_string("P ", COLOR_AMBER_ON_BLACK); 
                 } else {
-                    vga_print_string(". ", COLOR_GREY_ON_BLACK); // Open Space
+                    vga_print_string(". ", COLOR_GREY_ON_BLACK); 
                 }
             }
             vga_print_string("\n", COLOR_GREY_ON_BLACK);
@@ -2051,14 +2069,13 @@ void play_kernel_quest() {
         if (input == 'a' || input == 'A') next_x--;
         if (input == 'd' || input == 'D') next_x++;
 
-        // Collision Check
         if (next_x >= 0 && next_x < MAZE_W && next_y >= 0 && next_y < MAZE_H) {
             if (maze[next_y][next_x] != '#') {
                 player_x = next_x;
                 player_y = next_y;
                 if (maze[player_y][player_x] == 'P') {
                     pages_collected++;
-                    maze[player_y][player_x] = ' '; // Clear Page slot
+                    maze[player_y][player_x] = ' '; 
                 }
             }
         }
@@ -2066,7 +2083,6 @@ void play_kernel_quest() {
     vga_clear_screen();
 }
 
-/* Retro Snake Game */
 void play_snake_game() {
     vga_clear_screen();
     vga_print_string("================================================================================\n", COLOR_AMBER_ON_BLACK);
@@ -2086,7 +2102,6 @@ void play_snake_game() {
     int snake_y[SNAKE_MAX_LENGTH];
     int snake_len = 3;
     
-    // Initial Spawn Positions
     snake_x[0] = 5; snake_y[0] = 5;
     snake_x[1] = 4; snake_y[1] = 5;
     snake_x[2] = 3; snake_y[2] = 5;
@@ -2107,12 +2122,11 @@ void play_snake_game() {
         vga_print_string(s_score, COLOR_WHITE_ON_BLACK);
         vga_print_string("] points\n\n", COLOR_AMBER_ON_BLACK);
 
-        // Draw top border
         for (int x = 0; x < BOARD_W + 2; x++) vga_print_string("#", COLOR_AMBER_ON_BLACK);
         vga_print_string("\n", COLOR_GREY_ON_BLACK);
 
         for (int y = 0; y < BOARD_H; y++) {
-            vga_print_string("#", COLOR_AMBER_ON_BLACK); // Left border
+            vga_print_string("#", COLOR_AMBER_ON_BLACK); 
             for (int x = 0; x < BOARD_W; x++) {
                 int is_snake = 0;
                 for (int i = 0; i < snake_len; i++) {
@@ -2130,10 +2144,9 @@ void play_snake_game() {
                     vga_print_string(" ", COLOR_GREY_ON_BLACK);
                 }
             }
-            vga_print_string("#\n", COLOR_AMBER_ON_BLACK); // Right border
+            vga_print_string("#\n", COLOR_AMBER_ON_BLACK); 
         }
 
-        // Draw bottom border
         for (int x = 0; x < BOARD_W + 2; x++) vga_print_string("#", COLOR_AMBER_ON_BLACK);
         vga_print_string("\n", COLOR_GREY_ON_BLACK);
 
@@ -2150,11 +2163,9 @@ void play_snake_game() {
         if ((input == 'a' || input == 'A') && dir_x != 1) { dir_x = -1; dir_y = 0; }
         if ((input == 'd' || input == 'D') && dir_x != -1) { dir_x = 1; dir_y = 0; }
 
-        // Update Snake Coordinates
         int next_head_x = snake_x[0] + dir_x;
         int next_head_y = snake_y[0] + dir_y;
 
-        // Wall collision triggers
         if (next_head_x < 0 || next_head_x >= BOARD_W || next_head_y < 0 || next_head_y >= BOARD_H) {
             vga_print_string("\nCRITICAL COLLISION: Firewall firewall barrier breached! Game Over.\n", COLOR_RED_ON_BLACK);
             vga_print_string("Press any key to exit.\n", COLOR_WHITE_ON_BLACK);
@@ -2163,7 +2174,6 @@ void play_snake_game() {
             break;
         }
 
-        // Self-collision triggers
         for (int i = 0; i < snake_len; i++) {
             if (snake_x[i] == next_head_x && snake_y[i] == next_head_y) {
                 vga_print_string("\nCRITICAL COLLISION: Snake segment crossed its own tail! Game Over.\n", COLOR_RED_ON_BLACK);
@@ -2176,7 +2186,6 @@ void play_snake_game() {
 
         if (!game_running) break;
 
-        // Shift coordinates
         for (int i = snake_len - 1; i > 0; i--) {
             snake_x[i] = snake_x[i - 1];
             snake_y[i] = snake_y[i - 1];
@@ -2184,13 +2193,11 @@ void play_snake_game() {
         snake_x[0] = next_head_x;
         snake_y[0] = next_head_y;
 
-        // Feeding Check
         if (snake_x[0] == apple_x && snake_y[0] == apple_y) {
             score += 10;
             if (snake_len < SNAKE_MAX_LENGTH) {
                 snake_len++;
             }
-            // Generate next random apple location within boundaries
             apple_x = rand() % BOARD_W;
             apple_y = rand() % BOARD_H;
         }
@@ -2203,7 +2210,6 @@ void play_snake_game() {
  * ------------------------------------------------------------------------------
  */
 
-/* Standard static helper to print characters to specific coordinates */
 static void print_to_coords(int x, int y, const char* str, char color) {
     unsigned short* mem = (unsigned short*)VGA_ADDRESS;
     for (int i = 0; str[i] != '\0'; i++) {
@@ -2214,9 +2220,8 @@ static void print_to_coords(int x, int y, const char* str, char color) {
 void parse_and_execute_command(char* cmd) {
     if (strlen(cmd) == 0) return;
 
-    // Tokenize command string
     char* cmd_name = strtok(cmd, " ");
-    char* args = strtok(0, ""); // Get all remaining arguments as a single block
+    char* args = strtok(0, ""); 
 
     if (strcmp(cmd_name, "help") == 0) {
         vga_print_string("Core OS Commands List:\n", current_prompt_color);
@@ -2228,6 +2233,11 @@ void parse_and_execute_command(char* cmd) {
         vga_print_string("  registers   - Print machine architectural values (CR0, CR3)\n", current_text_color);
         vga_print_string("  time        - Query real-time CMOS date and clock parameters\n", current_text_color);
         vga_print_string("  pciscan     - Scan Motherboard PCI bus routing channels\n", current_text_color);
+        vga_print_string("  gpudetect   - Probe and load all legacy/modern graphics drivers\n", current_text_color);
+        vga_print_string("  netdetect   - Probe and load all legacy/modern wireless & BT drivers\n", current_text_color);
+        vga_print_string("  ethdetect   - Probe and load all legacy/modern wired Ethernet drivers\n", current_text_color);
+        vga_print_string("  drminfo     - Dump registered DRM connector and CRTC structures\n", current_text_color);
+        vga_print_string("  drmtest     - Set 800x600 32-bit ARGB mode & draw graphic layout\n", current_text_color);
         vga_print_string("  sysmon      - Load live visual status telemetry layout\n", current_text_color);
         vga_print_string("  heapinfo    - Query memory allocations diagnostic statistics\n", current_text_color);
         vga_print_string("  hexview     - Hexadecimal viewer utility. Syntax: hexview <addr>\n", current_text_color);
@@ -2279,6 +2289,70 @@ void parse_and_execute_command(char* cmd) {
     }
     else if (strcmp(cmd_name, "time") == 0) {
         print_system_date_time();
+    }
+    else if (strcmp(cmd_name, "gpudetect") == 0) {
+        probe_all_gpus();
+    }
+    else if (strcmp(cmd_name, "netdetect") == 0) {
+        probe_all_wireless();
+    }
+    else if (strcmp(cmd_name, "ethdetect") == 0) {
+        probe_all_ethernet();
+    }
+    else if (strcmp(cmd_name, "drminfo") == 0) {
+        if (drm_print_diagnostics) drm_print_diagnostics();
+    }
+    else if (strcmp(cmd_name, "drmtest") == 0) {
+        vga_print_string("DRM: Setting up 800x600 32bpp graphics mode settings...\n", current_prompt_color);
+        
+        if (drm_set_mode && drm_set_mode(800, 600, 32) == 0) {
+            // Draw gradient background
+            for (unsigned int y = 0; y < 600; y++) {
+                unsigned int r = (y * 48) / 600;
+                unsigned int g = 0;
+                unsigned int b = 64 - (y * 32) / 600;
+                unsigned int gradient_color = (r << 16) | (g << 8) | b;
+                for (unsigned int x = 0; x < 800; x++) {
+                    if (drm_put_pixel) drm_put_pixel(x, y, gradient_color);
+                }
+            }
+
+            // Draw graphic panels
+            if (drm_draw_rect) {
+                drm_draw_rect(60, 60, 680, 80, 0x001F3F5F);  // Slate header panel
+                drm_draw_rect(60, 140, 680, 400, 0x000F1F2F); // Dark blue main body
+
+                // Draw layout decorations and geometric colors
+                drm_draw_rect(100, 200, 220, 160, 0x00D9534F); // High-contrast Red block
+                drm_draw_rect(180, 260, 220, 160, 0x005CB85C); // Overlapping green block
+            }
+
+            // Draw sun rays using trigonometric approximations
+            for (int angle = 0; angle < 360; angle += 15) {
+                double rad = (double)angle * 3.14159265 / 180.0;
+                int ray_x = (int)(cos_approx(rad) * 90.0);
+                int ray_y = (int)(sin_approx(rad) * 90.0);
+                if (drm_draw_line) drm_draw_line(560, 340, 560 + ray_x, 340 + ray_y, 0x00F0AD4E); // Warm Orange rays
+            }
+
+            // Border structures
+            if (drm_draw_line) {
+                drm_draw_line(60, 60, 740, 540, 0x00337AB7);
+                drm_draw_line(740, 60, 60, 540, 0x00337AB7);
+            }
+
+            if (drm_page_flip) drm_page_flip();
+
+            // Intercept standard hardware inputs
+            wait_for_key();
+
+            // Clear buffers and return to standard legacy text console
+            if (drm_restore_vga_text_mode) drm_restore_vga_text_mode();
+            vga_clear_screen();
+            vga_print_string("DRM: Cleanly restored standard VGA 80x25 text mode terminal.\n", COLOR_GREEN_ON_BLACK);
+        } else {
+            vga_print_string("DRM BLAD: BGA device not located. High-res simulation unavailable.\n", COLOR_RED_ON_BLACK);
+        }
     }
     else if (strcmp(cmd_name, "pciscan") == 0) {
         vga_print_string("Scanning physical system PCI lanes...\n", current_prompt_color);
@@ -2404,7 +2478,6 @@ void parse_and_execute_command(char* cmd) {
         sys_halt();
     }
     
-    // File system commands parsing
     else if (strcmp(cmd_name, "ls") == 0) {
         vga_print_string("Directory Content Inode Listing:\n", current_prompt_color);
         if (pingfs_current_dir->child_count == 0) {
@@ -2458,7 +2531,6 @@ void parse_and_execute_command(char* cmd) {
             return;
         }
         
-        // Split argument into name and content block
         char* f_name = strtok(args, " ");
         char* f_content = strtok(0, "");
 
@@ -2512,7 +2584,6 @@ void parse_and_execute_command(char* cmd) {
         }
     }
     
-    // Mini-Game Shell Command routing
     else if (strcmp(cmd_name, "quest") == 0) {
         play_kernel_quest();
     }
@@ -2520,20 +2591,15 @@ void parse_and_execute_command(char* cmd) {
         play_snake_game();
     }
     
-    // Live TUI System Monitor Screen
     else if (strcmp(cmd_name, "sysmon") == 0) {
         vga_clear_screen();
         
-        // Draw window borders
         tui_draw_window(2, 1, 76, 21, "PingOS Diagnostics Real-Time Diagnostics Interface", COLOR_CYAN_ON_BLACK);
         
-        // Draw static textual lines inside window bounds
         unsigned short* vga_mem = (unsigned short*)VGA_ADDRESS;
         
-        // Subtitle labels
         vga_print_string("\n  [SYSTEM PERFORMANCE METRIC PORTAL]\n", COLOR_WHITE_ON_BLACK);
         
-        // Calculate dynamic system ticks and heap metrics
         int total, used, free_blks;
         get_heap_diagnostics(&total, &used, &free_blks);
         
@@ -2560,7 +2626,6 @@ void parse_and_execute_command(char* cmd) {
         
         print_to_coords(6, 19, "Press any key to close visual system monitor channel...", COLOR_BLACK_ON_GREY);
 
-        /* update_hardware_cursor(); */
         wait_for_key();
         vga_clear_screen();
     }
@@ -2571,7 +2636,6 @@ void parse_and_execute_command(char* cmd) {
     }
 }
 
-/* Shell execution thread loops indefinitely */
 void run_shell() {
     char input_buffer[64];
     int input_index = 0;
@@ -2579,7 +2643,6 @@ void run_shell() {
     vga_print_string("\n", current_text_color);
     
     while (1) {
-        // Render path prompt
         char current_path[128];
         get_current_working_directory_path(current_path);
 
@@ -2620,21 +2683,16 @@ void run_shell() {
 /* ------------------------------------------------------------------------------
  * SECTION 19: Built-in Mock Daemon Threads / Cooperative Processes
  * ------------------------------------------------------------------------------
- * Examples of cooperative processes executing inside our scheduler framework.
- * ------------------------------------------------------------------------------
  */
 
-/* Background clock diagnostic updater task */
 void clock_daemon_process() {
     while (1) {
-        // Read seconds from RTC CMOS registers
         unsigned char sec = get_cmos_value(0x00);
         unsigned char registerB = get_cmos_value(0x0B);
         if (!(registerB & 0x04)) {
             sec = (sec & 0x0F) + ((sec >> 4) * 10);
         }
 
-        // Output current ticking seconds into bottom right corner of display
         unsigned short* vga_mem = (unsigned short*)VGA_ADDRESS;
         int target_col = VGA_COLS - 6;
         int target_row = 0;
@@ -2648,21 +2706,17 @@ void clock_daemon_process() {
         vga_mem[target_row * VGA_COLS + target_col + 3] = (COLOR_CYAN_ON_BLACK << 8) | s_sec[1];
         vga_mem[target_row * VGA_COLS + target_col + 4] = (COLOR_CYAN_ON_BLACK << 8) | 's';
 
-        // Increment thread diagnostic ticks inside task list
         task_queue[current_executing_index]->ticks_run++;
-
-        task_yield(); // Voluntarily yield time slice
+        task_yield(); 
     }
 }
 
-/* System monitoring daemon tracking memory limits */
 void sys_monitoring_daemon() {
     while (1) {
         int total, used, free_blks;
         get_heap_diagnostics(&total, &used, &free_blks);
 
         if (used > (total * 80) / 100) {
-            // Display warnings inside top status bar space
             unsigned short* vga_mem = (unsigned short*)VGA_ADDRESS;
             const char* alert = " ! MEM LIMIT ! ";
             for (int i = 0; alert[i] != '\0'; i++) {
@@ -2694,15 +2748,16 @@ void main() {
     // 4. Initialize Multi-tasking Schedulers
     init_scheduler();
 
-    // 5. Initialize Hardware Keyboard & Mouse
+    // 5. Initialize Hardware Keyboard, Mouse & USB Controllers
     keyboard_init();
     mouse_init();
+    usb_init();
 
     // 6. Spawn Background System Threads
     create_kernel_task("System_Clock_Daemon", clock_daemon_process);
     create_kernel_task("System_Memory_Daemon", sys_monitoring_daemon);
 
-   // 3. Draw Splash Screen (Monochrome layout exactly restored)
+    // 7. Draw Splash Screen (Monochrome layout exactly restored)
     vga_print_string("================================================================================\n", COLOR_GREY_ON_BLACK);
     vga_print_string("PingOS\n", COLOR_WHITE_ON_BLACK);
     vga_print_string("OS made mostly for testing as a hobby project. Have fun!\n", COLOR_GREY_ON_BLACK);
@@ -2712,6 +2767,15 @@ void main() {
     vga_print_string("To check OS version, type \"uname\"\n", COLOR_GREY_ON_BLACK);
     vga_print_string("=================================================================================\n\n", COLOR_GREY_ON_BLACK);
 
-    // 8. Fire interactive shell loop
+    // 8. Auto-probe modern and legacy GPU controllers & setup DRM
+    probe_all_gpus();
+
+    // 8.5 Auto-probe wireless and Bluetooth network hardware
+    probe_all_wireless();
+
+    // 8.6 Auto-probe wired Ethernet controllers
+    probe_all_ethernet();
+
+    // 9. Fire interactive shell loop
     run_shell();
 }
