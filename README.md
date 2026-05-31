@@ -2,19 +2,23 @@
 
 PingOS is a freestanding 32-bit x86 operating system developed as a hobby project. 
 
-# Compile PingOS from source code
+# Why no Makefile?
 
-Clone the source code of PingOS.
+In PingOS, Makefile was replaced with my own script, Spartan.
 
-Run "make spartan"
+# What is Spartan and how to use it?
 
-After running it, run "spartan build"
+When you clone or download the PingOS source code, you just need to run "bash spartan.sh" and you enter the Spartan commandline.
 
-This will output the iso file.
+# How to build with Spartan?
 
-If you want to remove the compiled files quickly, then run "spartan clean".
+Either use the commands from here or type "help" while being inside Spartan.
 
-To exit the spartan script, run "exit".
+To build PingOS, type "spartan build"
+
+To run PingOS in qemu, type "spartan run"
+
+To remove compiled files, type "spartan clean"
 
 # Project Overview
 
