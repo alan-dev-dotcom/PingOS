@@ -16,7 +16,7 @@ Either use the commands from here or type "help" while being inside Spartan.
 
 To build PingOS, type "spartan build"
 
-To run PingOS in qemu, type "spartan run"
+To run PingOS in QEMU, type "spartan run"
 
 To remove compiled files, type "spartan clean"
 
