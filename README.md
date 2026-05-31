@@ -38,13 +38,6 @@ Intel Integrated GPU detector to locate display devices on the PCI bus and enabl
 
 Command Line Interface: Standard shell with support for basic commands including:
 
-# Emulation
-
-Run the bootable ISO using QEMU:
-
-qemu-system-i386 -cdrom pingos.iso
-
-
 # Contributing
 
 Fork the project repository on GitHub.
