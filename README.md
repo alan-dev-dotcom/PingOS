@@ -2,65 +2,6 @@
 
 PingOS is a freestanding, bare-metal 32-bit x86 operating system built from scratch. Developed entirely as a hobbyist learning project, it runs in protected mode and showcases direct hardware communication, cooperative multitasking, custom memory management, an in-memory VFS, and an extensive suite of low-level hardware drivers.
 
-# Project Directory Structure
-
-Your project is organized into modular directories representing core subsystems, peripherals, graphics, and networking interfaces:
-
-.
-├── boot
-│   └── boot.asm             # 16-bit real-mode & 32-bit protected-mode bootloader
-├── drivers
-│   ├── gpu
-│   │   ├── amdgpu.c         # AMD Radeon (GCN/RDNA) graphics stub
-│   │   ├── gpu_drm.c        # Bochs Graphics Adapter (BGA) DRM/KMS engine
-│   │   ├── i915.c           # Intel Legacy HD Graphics driver
-│   │   ├── intel_gpu.c      # Intel Display PCI detector & controller
-│   │   ├── lima.c           # ARM Mali Utgard portability stub
-│   │   ├── mgag200.c        # Matrox G200 server graphics driver
-│   │   ├── nouveau.c        # NVIDIA GeForce graphics stub
-│   │   ├── panfrost.c       # ARM Mali Midgard/Bifrost portability stub
-│   │   ├── radeon.c         # Legacy ATI/AMD Radeon driver
-│   │   ├── vboxvideo.c      # VBox Guest integration driver
-│   │   ├── vga.c            # Legacy VGA 80x25 text-mode console driver
-│   │   ├── virtio-gpu.c     # QEMU VirtIO hypervisor-optimized 2D graphics driver
-│   │   └── xe.c             # Modern Intel Xe graphics architecture stub
-│   ├── peripherals
-│   │   ├── keyboard.c       # PS/2 keyboard controller & ASCII translator
-│   │   ├── mouse.c          # PS/2 mouse coordinate packet decoder
-│   │   └── usb.c            # USB Host Controller PCI detector (UHCI/EHCI/xHCI)
-│   ├── wireless
-│   │   ├── ath9k.c          # Atheros 802.11n wireless stub
-│   │   ├── ath10k.c         # Atheros 802.11ac wireless stub
-│   │   ├── ath11k.c         # Atheros 802.11ax (WiFi 6) wireless stub
-│   │   ├── b43.c            # Broadcom legacy SoftMAC wireless stub
-│   │   ├── brcmfmac.c       # Broadcom FullMAC wireless stub
-│   │   ├── btusb.c          # Generic USB Bluetooth HCI controller stub
-│   │   ├── iwlwifi.c        # Intel Wireless WiFi Link driver stub
-│   │   ├── mt76.c           # MediaTek wireless chipset stub
-│   │   ├── rtl8187.c        # Realtek legacy USB wireless driver stub
-│   │   └── rtw88.c          # Realtek 802.11ac wireless driver stub
-│   └── network
-│       ├── alx.c            # Qualcomm Atheros Gigabit Ethernet driver
-│       ├── e1000e.c         # Intel PRO/1000 PCIe Gigabit Ethernet driver
-│       ├── forcedeth.c      # NVIDIA nForce Integrated Ethernet LAN driver
-│       ├── i40e.c           # Intel Fortville XL710 40-Gigabit driver
-│       ├── igb.c            # Intel I350/I210 Gigabit Ethernet driver
-│       ├── igxbe.c          # Intel X520/X540/X550 10-Gigabit driver
-│       ├── r8169.c          # Realtek RTL8111/RTL8168 Gigabit Ethernet driver
-│       ├── sky2.c           # Marvell Yukon-2 Gigabit Ethernet driver
-│       ├── tg3.c            # Broadcom Tigon3 Gigabit Ethernet driver
-│       └── virtio_net.c     # QEMU VirtIO hypervisor-optimized network driver
-├── include
-│   ├── drivers.h            # Main drivers header function declarations
-│   └── io.h                 # Low-level inline port assembly wrappers
-├── kernel
-│   ├── entry.asm            # Multiboot-compliant kernel entry point
-│   └── kernel.c             # Freestanding kernel, scheduler, and TUI Shell
-├── LICENSE                  # Project open-source license
-├── linker.ld                # Linker memory organization layout map
-└── spartan.sh               # Safe self-healing build automation tool
-
-
 # Why No Makefile? Introducing Spartan
 
 PingOS replaces traditional complex Makefiles with Spartan (spartan.sh), a unified command-line build manager written entirely in Bash.
