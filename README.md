@@ -1,6 +1,6 @@
 # PingOS
 
-PingOS is a freestanding 32-bit x86 operating system developed as a hobby project. It is designed to demonstrate basic low-level system design concepts, including boot sector initialization, Protected Mode transitions, and simple hardware driver implementation.
+PingOS is a freestanding 32-bit x86 operating system developed as a hobby project. 
 
 # Compile PingOS from source code
 
@@ -18,11 +18,7 @@ To exit the spartan script, run "exit".
 
 # Project Overview
 
-The project initiates from a custom 16-bit real-mode bootloader that configures segments, switches the CPU to 32-bit protected mode, and executes the C kernel. The interface runs entirely in a monochrome text environment.
-
 # Features
-
-Custom Bootloader: Written in NASM assembly, handles disk sector reading, sets up the Global Descriptor Table (GDT), and jumps into the 32-bit kernel entry point.
 
 Video Driver: Direct-to-video memory implementation (address 0xB8000) supporting scroll, clear, and hardware cursor positioning.
 
