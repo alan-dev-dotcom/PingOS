@@ -1,7 +1,7 @@
 
 # PingOS
 
-PingOS is a freestanding, bare-metal 32-bit x86 operating system built from scratch. Developed entirely as a hobbyist learning project, it runs in protected mode and showcases direct hardware communication, cooperative multitasking, custom memory management, an in-memory VFS, and an extensive suite of low-level hardware drivers.
+PingOS is a freestanding, bare-metal 32-bit x86 operating system built from scratch. 
 
 ## Why No Makefile? Introducing Spartan
 
@@ -52,7 +52,7 @@ Once inside the Spartan prompt, you can use the following pipeline commands:
 
 ---
 
-## OS Features & Driver Architecture
+## OS Features
 
 ### Core Kernel Engine
 * **Segment Allocation:** Custom Global Descriptor Table (GDT) defining flat memory segments.
@@ -60,14 +60,6 @@ Once inside the Spartan prompt, you can use the following pipeline commands:
 * **Multitasking:** A cooperative round-robin scheduler managing individual Process Control Blocks (PCBs) and yielding time-slices safely.
 * **Dynamic Allocations:** A doubly-linked list first-fit heap allocator managing a dedicated 4MB memory region.
 * **RAM-Based Disk File System:** `PingFS`, a hierarchical in-memory VFS supporting multi-block files, directories, path navigation, and dynamic size re-calculations.
-
-### Hardware Drivers
-* **VGA Text Console:** Direct-to-video memory implementation mapping character glyphs and color styling to address `0xB8000`. Handles screen scrolling and programs VGA registers `0x3D4`/`0x3D5` to update the blinking hardware text cursor.
-* **Keyboard & Mouse:** Classic Intel 8042 controller driver reading from raw CPU I/O ports `0x60`/`0x64`. Supports shifts, caps lock, backspaces, and mouse button/coordinate tracking.
-* **Direct Rendering Manager (DRM/KMS):** A software-defined graphics mode setting system for Bochs Graphic Adapters (BGA). Simulates high-resolution modes (e.g., 800x600 32-bit ARGB) by mapping the physical Linear Framebuffer (LFB).
-* **Hardware PCI Probing:** Performs low-level I/O scanning of physical PCIe buses (`0xCF8`/`0xCFC`) to identify network, audio, wireless, and companion host controllers.
-
----
 
 ## Contributing Guidelines
 
