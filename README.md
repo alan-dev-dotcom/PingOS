@@ -34,19 +34,19 @@ Once inside the Spartan prompt, you can use the following pipeline commands:
 
 * **Build the bootable ISO:**
   ```bash
-  spartan> spartan build
+  spartan build
   ```
   Compiles the kernel assembly, compiles all nested active drivers (or generates safe fallback stubs), links everything into an ELF `kernel.bin`, and packages it into `pingos.iso`.
 
 * **Run the OS in QEMU:**
   ```bash
-  spartan> spartan run
+   spartan run
   ```
   Bootstraps the built operating system inside the QEMU simulator (`qemu-system-i386`). It will automatically build the ISO first if it cannot be found in your folder.
 
 * **Clean the workspace:**
   ```bash
-  spartan> spartan clean
+   spartan clean
   ```
   Purges compiled objects, binary files, assembled stubs, and temporal staging directories to keep your repository pristine.
 
